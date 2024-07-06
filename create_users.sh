@@ -97,16 +97,15 @@ while IFS=';' read -r user groups; do
 
     if id "$user" &>/dev/null; then
         log_message "User $user already exists."
-        continue
-    fi
-
-    if create_user "$user"; then
-        if set_user_password "$user"; then
-            add_user_to_groups "$user" "$groups"
-            set_home_permissions "$user"
+        add_user_to_groups "$user" "$groups"
+    else
+        if create_user "$user"; then
+            if set_user_password "$user"; then
+                add_user_to_groups "$user" "$groups"
+                set_home_permissions "$user"
+            fi
         fi
     fi
-
 done < "$USER_FILE"
 
 log_message "User creation process completed."
