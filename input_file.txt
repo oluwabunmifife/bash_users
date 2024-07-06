@@ -1,0 +1,9 @@
+fife; sudo,dev,www
+dele; sudo,dev,www-data
+tok; sudo
+newman; sudo
+prime; dev,www-data
+optimus; dev,www-data
+man; www-data,dev
+wonder; dev,www-data
+leader; dev,www-data
