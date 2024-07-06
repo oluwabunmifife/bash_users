@@ -1,5 +1,65 @@
 #!/bin/bash
 
+# Function to log messages
+log_message() {
+    echo "$(date "+%Y-%m-%d %H:%M:%S") : $1" >> "$LOG_FILE"
+}
+
+# Function to trim leading/trailing whitespace
+trim() {
+    echo "$1" | xargs
+}
+
+# Function to create a user
+create_user() {
+    local user="$1"
+    useradd -m -s /bin/bash "$user"
+    if [ $? -eq 0 ]; then
+        log_message "User $user created successfully"
+        return 0
+    else
+        log_message "Failed to create user $user"
+        return 1
+    fi
+}
+
+# Function to set user password
+set_user_password() {
+    local user="$1"
+    local password=$(openssl rand -base64 12)
+    echo "$user:$password" | chpasswd
+    if [ $? -eq 0 ]; then
+        log_message "Password set for user $user"
+        echo "$user,$password" >> "$PASSWORD_FILE"
+    else
+        log_message "Failed to set password for user $user"
+        return 1
+    fi
+}
+
+# Function to add user to groups
+add_user_to_groups() {
+    local user="$1"
+    local groups="$2"
+    IFS=',' read -r -a group_array <<< "$groups"
+    for group in "${group_array[@]}"; do
+        group=$(trim "$group")
+        groupadd -f "$group"
+        usermod -aG "$group" "$user"
+        log_message "User $user added to group $group"
+    done
+}
+
+# Function to set home directory permissions
+set_home_permissions() {
+    local user="$1"
+    chmod 700 /home/"$user"
+    chown "$user":"$user" /home/"$user"
+    log_message "Permissions set for user $user's home directory"
+}
+
+# Main script execution
+
 # Check if the script is run as root
 if [ "$(id -u)" -ne 0 ]; then
     echo "This script must be run as root"
@@ -28,54 +88,25 @@ chmod 600 $LOG_FILE
 touch $PASSWORD_FILE
 chmod 600 $PASSWORD_FILE
 
+USER_FILE="$1"
+
 # Read the input file line by line
-while IFS=';' read -r USER GROUPS; do
-    # Remove whitespace from the username and groups
-    USER=$(echo "$USER" | xargs)
-    GROUPS=$(echo "$GROUPS" | xargs)
+while IFS=';' read -r user groups; do
+    user=$(trim "$user")
+    groups=$(trim "$groups")
 
-    # Check if the user already exists
-    if id "$USER" &>/dev/null; then
-        log_message "User $USER already exists."
+    if id "$user" &>/dev/null; then
+        log_message "User $user already exists."
         continue
     fi
 
-    # Create the user with their personal group and home directory
-    useradd -m -s /bin/bash "$USER"
-    if [ $? -eq 0 ]; then
-        log_message "User $USER created successfully."
-    else
-        log_message "Failed to create user $USER."
-        continue
+    if create_user "$user"; then
+        if set_user_password "$user"; then
+            add_user_to_groups "$user" "$groups"
+            set_home_permissions "$user"
+        fi
     fi
-
-    # Generate a random password
-    PASSWORD=$(openssl rand -base64 12)
-
-    # Set the password for the user
-    echo "$USER:$PASSWORD" | chpasswd
-    if [ $? -eq 0 ]; then
-        log_message "Password set for user $USER."
-        # Store the username and password in the password file
-        echo "$USER,$PASSWORD" >> $PASSWORD_FILE
-    else
-        log_message "Failed to set password for user $USER."
-        continue
-    fi
-
-    # Add the user to additional groups if specified
-    if [ -n "$GROUPS" ]; then
-        IFS=',' read -r -a GROUP_ARRAY <<< "$GROUPS"
-        for GROUP in "${GROUP_ARRAY[@]}"; do
-            groupadd -f "$GROUP"
-            usermod -aG "$GROUP" "$USER"
-            log_message "User $USER added to group $GROUP."
-        done
-    fi
-
-    # Set permissions for the user's home directory
-    chmod 700 /home/"$USER"
-    chown "$USER":"$USER" /home/"$USER"
-    log_message "Permissions set for user $USER's home directory."
 
 done < "$USER_FILE"
+
+log_message "User creation process completed."
